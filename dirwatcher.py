@@ -20,18 +20,18 @@ for a "magic string", which is provided as a command line argument.
 
 TODO:
 
-1. accept command line arguments with argparse
+DONE 1. accept command line arguments with argparse
         add argument for txt file to monitor, magic word to look for
-2. monitor a given directory for text files created in that directory
+DONE 2. monitor a given directory for text files created in that directory
         timed polling loop with sleep to check directory
 3. If the magic string is found in a file, your program should log a message
         indicating which file, and the line number within the file where the magic text
         was found. Just one magic string location logged per line.
-4. program should terminate itself when catching SIGTERM or SIGINT signals
+DONE 4. program should terminate itself when catching SIGTERM or SIGINT signals
         (be sure to log a termination message). OS signal handler
 5. Handle and log different exceptions such as "file not found", "directory does not exist",
         as well as handle and report top-level unknown exceptions so that your program stays alive
-6. Include a startup and shutdown banner in your logs and report the total runtime (uptime)
+DONE 6. Include a startup and shutdown banner in your logs and report the total runtime (uptime)
         within your shutdown log banner
 
 """
@@ -45,6 +45,10 @@ import time
 import logging
 import datetime
 
+exit_flag = False
+start_time = ''
+current_directory_dict = {}
+
 
 def create_parser():
     """Creates an argument parser object."""
@@ -54,31 +58,9 @@ def create_parser():
     parser.add_argument(
         '-e', '--ext', help='Text file extension to watch.')
     parser.add_argument('-i', '--interval', type=int,
-                        help='Number of seconds between polling.', default=1)
+                        help='Number of seconds between polling.', default=3)
 
     return parser
-
-
-# def main(args):
-#     """Parses args, scans for URLs, gets images from URLs."""
-#     parser = create_parser()
-
-#     if not args:
-#         parser.print_usage()
-#         sys.exit(1)
-
-#     parsed_args = parser.parse_args(args)
-
-#     img_urls = read_urls(parsed_args.logfile)
-
-#     if parsed_args.todir:
-#         download_images(img_urls, parsed_args.todir)
-#     else:
-#         print('\n'.join(img_urls))
-
-
-exit_flag = False
-start_time = ''
 
 
 def signal_handler(sig_num, frame):
@@ -94,7 +76,8 @@ def signal_handler(sig_num, frame):
     # log the associated signal name
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.WARNING)
-    logger.warning(f'Received Exit Signal: {signal.Signals(sig_num).name}')
+    logger.warning(
+        f'Received OS Process Signal, {signal.Signals(sig_num).name}')
     logger2 = logging.getLogger(__name__)
     logger2.setLevel(logging.INFO)
     logger2.info(
@@ -117,36 +100,91 @@ def start_watch_directory(watch_directory, magic_text, polling_interval, ext):
         logger.error(
             f'Directory or file not found:{os.getcwd()}/{watch_directory}')
     else:
-        # create dictionary from directory
-        logger = logging.getLogger(__name__)
-        # logger.setLevel(logging.INFO)
-        logger.setLevel(logging.INFO)
-        logger.info(
-            f'Watching {watch_directory} for "{magic_text}" now.')
-
-        detect_added_files(watch_directory)
+        scan_full_directory(watch_directory, ext, magic_text)
         detect_deleted_file(watch_directory)
-    # compare the previous dictionary of directory with current dictionary of directory
+        detect_added_files(watch_directory, ext, magic_text)
 
 
-def detect_added_files(watch_directory):
+def detect_added_files(watch_directory, ext, magic_text):
     """Detect when a file is added to directory being watched."""
-    # if new files , then run scan_single_file()
-
-    pass
+    global current_directory_dict
+    new_directory_list = os.listdir(watch_directory)
+    if len(new_directory_list) == 0:
+        return
+    else:
+        for f in new_directory_list:
+            if f.endswith(ext) and f not in current_directory_dict:
+                print(f'New file detected: {f}')
+                current_directory_dict[f] = 0
+                # print('new current dictionary: ', current_directory_dict)
+                scan_single_file(watch_directory, f, magic_text)
+            else:
+                continue
 
 
 def detect_deleted_file(watch_directory):
     """Detect when a logged file is deleted from directory being watched."""
+    global current_directory_dict
+    new_directory_list = os.listdir(watch_directory)
+    if len(new_directory_list) == 0:
+        return
+    else:
+        for dict_entry in current_directory_dict:
+            if dict_entry not in new_directory_list:
+                del current_directory_dict[dict_entry]
+                print('Deleted File Detected and Removed from Directory Dict')
     # if files deleted from directory, then log message
     # logging.basicConfig(level=logging.WARNING)
     # logger = logging.getLogger(__name__)
     # logger.warning('Detected deleted file.')
 
 
-def scan_single_file(file_name):
+def scan_single_file(watch_directory, file_name, magic_text):
     """Scan a file for the specified magic word."""
-    pass
+    with open(f'{watch_directory}/{file_name}') as f:  # open individual file
+        #text = f.read()
+        for i, line in enumerate(f):
+            # loop thru and read line by line looking for magic word, then keep track of line in overall wtched dictionary. enumerate
+            if magic_text in line.lower():
+                logger = logging.getLogger(__name__)
+                logger.setLevel(logging.INFO)
+                logger.info(f'Magic Word found in {file_name} on line {i+1}')
+                global current_directory_dict
+                current_directory_dict[file_name] = i+1
+            else:
+                #print('scan found no magic text')
+                continue
+
+
+def scan_full_directory(watch_directory, ext, magic_text):
+    """Scan a full directory for the specified magic word and new text with magic words."""
+    global current_directory_dict
+    if os.path.isdir(f'{watch_directory}'):  # confirm directory exists
+        # creates list of directory contents
+        new_directory_list = os.listdir(watch_directory)
+        if not len(new_directory_list) == 0:  # confirm there is a file on the directory
+            #print('new directory list ln 155: ', new_directory_list)
+            for single_file in new_directory_list:
+                if single_file.endswith(ext):  # sort files ending in ext
+                    with open(f'{watch_directory}/{single_file}') as f:  # open individual file
+                        # print(
+                        #     f'current global directory dict ln 160: {current_directory_dict} - {datetime.datetime.now()}')
+                        #text = f.read()
+                        for i, line in enumerate(f):
+                            # loop thru and read line by line looking for magic word, then keep track of line in overall wtched dictionary. enumerate
+                            if magic_text in line.lower():
+                                if single_file in current_directory_dict:
+                                    # print(
+                                    #     f'current_directory_dict[single_file]: ', current_directory_dict[single_file])
+                                    if current_directory_dict[single_file] < i+1:
+                                        logger = logging.getLogger(__name__)
+                                        logger.setLevel(logging.INFO)
+                                        logger.info(
+                                            f'Magic Word found in {single_file} on line {i+1}')
+                                        current_directory_dict[single_file] = i+1
+                                else:
+                                    current_directory_dict[single_file] = i+1
+                                    pass
 
 
 def main(args):
@@ -172,8 +210,22 @@ def main(args):
     #print('parsed_args', parsed_args)
     ext = parsed_args.ext
     polling_interval = parsed_args.interval
-    magic_text = parsed_args.magic
+    magic_text = parsed_args.magic.lower()
     watch_directory = parsed_args.path
+
+    global current_directory_dict
+    if not os.path.isdir(f'{watch_directory}'):
+        pass
+    else:
+        current_directory_list = os.listdir(watch_directory)
+        if len(current_directory_list) != 0:
+            for f in current_directory_list:
+                if f.endswith(ext):                 # first scan of directory and add
+                    # those with right ext to global current_directory_dict
+                    current_directory_dict[f] = 0
+                    print(f'New file detected: {f}')
+                    # scan individual file for magic text
+                    scan_single_file(watch_directory, f, magic_text)
 
     # Hook into these two signals from the OS
     signal.signal(signal.SIGINT, signal_handler)
@@ -183,22 +235,26 @@ def main(args):
 
     while not exit_flag:
         try:
-            # call my directory watching function
             start_watch_directory(
                 watch_directory, magic_text, polling_interval, ext)
+        except ValueError:
+            logger = logging.getLogger(__name__)
+            logger.error('Value Error Received and Logged.')
+            # raise
+        except TypeError:
+            logger = logging.getLogger(__name__)
+            logger.error('Type Error Received and Logged.')
+            # raise
+        except RuntimeError:
+            logger = logging.getLogger(__name__)
+            logger.error('RunTime Error Received and Logged.')
+            # raise
         except Exception as e:
             # This is an UNHANDLED exception
-            # Log an ERROR level message here
             logger = logging.getLogger(__name__)
             logger.error('Error Received and Logged.')
-
-        # put a sleep inside my while loop so I don't peg the cpu usage at 100%
-
+            raise
         time.sleep(polling_interval)
-
-    # final exit point happens here
-    # Log a message that we are shutting down
-    # Include the overall uptime since program start
 
 
 if __name__ == '__main__':
